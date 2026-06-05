@@ -1,10 +1,10 @@
 <?php
 // ไฟล์ connect.php
 // รองรับการย้าย credential ไปไว้ใน environment variables โดยยังคงทำงานได้กับค่าปัจจุบัน
-$servername = getenv('MFOOD_DB_SERVER') ?: "192.168.2.3\MFOODSQL";
-$username = getenv('MFOOD_DB_USERNAME') ?: "mfood";
-$password = getenv('MFOOD_DB_PASSWORD') ?: "mf00d@csm";
-$dbname = getenv('MFOOD_DB_NAME') ?: "M_FOOD";
+$servername = getenv('MFOOD_DB_SERVER') ?: "";
+$username = getenv('MFOOD_DB_USERNAME') ?: "";
+$password = getenv('MFOOD_DB_PASSWORD') ?: "";
+$dbname = getenv('MFOOD_DB_NAME') ?: "";
 
 $conn = null;
 $dbError = null;
