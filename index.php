@@ -8,6 +8,40 @@ $thaiMonths = [
     9 => 'ก.ย.', 10 => 'ต.ค.', 11 => 'พ.ย.', 12 => 'ธ.ค.',
 ];
 
+function parseFilterDate($value)
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return false;
+    }
+
+    foreach (['Y-m-d', 'd/m/Y'] as $format) {
+        $date = DateTime::createFromFormat('!' . $format, $value);
+        $errors = DateTime::getLastErrors();
+        $hasErrors = is_array($errors) && ($errors['warning_count'] > 0 || $errors['error_count'] > 0);
+
+        if ($date && !$hasErrors && $date->format($format) === $value) {
+            return $date;
+        }
+    }
+
+    return false;
+}
+
+function normalizeFilterDateValue($value)
+{
+    $date = parseFilterDate($value);
+
+    return $date ? $date->format('Y-m-d') : trim((string) $value);
+}
+
+function formatFilterDateInput($value)
+{
+    $date = parseFilterDate($value);
+
+    return $date ? $date->format('d/m/Y') : '';
+}
+
 $yearOptions = [];
 $selectedYear = (int) date('Y');
 $selectedMonth = 0;
@@ -15,6 +49,10 @@ $selectedBudgetCode = '';
 $selectedBudgetDesc = '';
 $selectedProdStart = '';
 $selectedProdEnd = '';
+$selectedLoadStart = '';
+$selectedLoadEnd = '';
+$selectedPurchaseStart = '';
+$selectedPurchaseEnd = '';
 $errorMessage = null;
 
 $summary = [
@@ -26,6 +64,7 @@ $summary = [
     'loading_box' => 0.0,
     'loading_export_kg' => 0.0,
     'loading_domestic_kg' => 0.0,
+    'warehouse_receipt_qty' => 0.0,
     'pr_count' => 0,
     'po_count' => 0,
 ];
@@ -37,9 +76,23 @@ $productionDailyProductRows = [];
 $productionDailyStartDate = '';
 $productionDailyEndDate = '';
 $hasCustomProdDates = false;
+$loadingStartDate = '';
+$loadingEndDate = '';
+$hasCustomLoadDates = false;
+$purchaseStartDate = '';
+$purchaseEndDate = '';
+$hasCustomPurchaseDates = false;
 $loadingRows = [];
 $loadingDetailRows = [];
 $loadingTopProductRows = [];
+$warehouseReceiptRows = [];
+$warehouseReceiptCustomerRows = [];
+$warehouseReceiptProductRows = [];
+$purchaseMonthlyRows = [];
+$purchaseStatusRows = [];
+$purchaseDepartmentRows = [];
+$purchaseSupplierRows = [];
+$purchaseProductRows = [];
 
 if ($conn) {
     try {
@@ -133,11 +186,27 @@ if ($conn) {
         }
 
         if (isset($_GET['prod_start'])) {
-            $selectedProdStart = trim((string) $_GET['prod_start']);
+            $selectedProdStart = normalizeFilterDateValue($_GET['prod_start']);
         }
 
         if (isset($_GET['prod_end'])) {
-            $selectedProdEnd = trim((string) $_GET['prod_end']);
+            $selectedProdEnd = normalizeFilterDateValue($_GET['prod_end']);
+        }
+
+        if (isset($_GET['load_start'])) {
+            $selectedLoadStart = normalizeFilterDateValue($_GET['load_start']);
+        }
+
+        if (isset($_GET['load_end'])) {
+            $selectedLoadEnd = normalizeFilterDateValue($_GET['load_end']);
+        }
+
+        if (isset($_GET['purchase_start'])) {
+            $selectedPurchaseStart = normalizeFilterDateValue($_GET['purchase_start']);
+        }
+
+        if (isset($_GET['purchase_end'])) {
+            $selectedPurchaseEnd = normalizeFilterDateValue($_GET['purchase_end']);
         }
 
         $startDate = sprintf('%04d-01-01', $selectedYear);
@@ -145,6 +214,46 @@ if ($conn) {
         $params = [
             ':start_date' => $startDate,
             ':end_date' => $endDate,
+        ];
+        $loadingStartDate = $startDate;
+        $loadingEndDate = (new DateTime($endDate))->modify('-1 day')->format('Y-m-d');
+        if ($selectedLoadStart !== '' && $selectedLoadEnd !== '') {
+            $customLoadStart = DateTime::createFromFormat('Y-m-d', $selectedLoadStart);
+            $customLoadEnd = DateTime::createFromFormat('Y-m-d', $selectedLoadEnd);
+            if ($customLoadStart && $customLoadStart->format('Y-m-d') === $selectedLoadStart &&
+                $customLoadEnd && $customLoadEnd->format('Y-m-d') === $selectedLoadEnd &&
+                (int) $customLoadStart->format('Y') === $selectedYear &&
+                (int) $customLoadEnd->format('Y') === $selectedYear &&
+                $customLoadStart <= $customLoadEnd) {
+                $loadingStartDate = $selectedLoadStart;
+                $loadingEndDate = $selectedLoadEnd;
+                $hasCustomLoadDates = true;
+            }
+        }
+        $loadingParams = [
+            ':loading_start_date' => $loadingStartDate,
+            ':loading_end_date' => (new DateTime($loadingEndDate))->modify('+1 day')->format('Y-m-d'),
+        ];
+        $purchaseStartDate = $startDate;
+        $purchaseEndDate = (new DateTime($endDate))->modify('-1 day')->format('Y-m-d');
+        if ($selectedPurchaseStart !== '' && $selectedPurchaseEnd !== '') {
+            $customPurchaseStart = DateTime::createFromFormat('Y-m-d', $selectedPurchaseStart);
+            $customPurchaseEnd = DateTime::createFromFormat('Y-m-d', $selectedPurchaseEnd);
+            if ($customPurchaseStart && $customPurchaseStart->format('Y-m-d') === $selectedPurchaseStart &&
+                $customPurchaseEnd && $customPurchaseEnd->format('Y-m-d') === $selectedPurchaseEnd &&
+                (int) $customPurchaseStart->format('Y') === $selectedYear &&
+                (int) $customPurchaseEnd->format('Y') === $selectedYear &&
+                $customPurchaseStart <= $customPurchaseEnd) {
+                $purchaseStartDate = $selectedPurchaseStart;
+                $purchaseEndDate = $selectedPurchaseEnd;
+                $hasCustomPurchaseDates = true;
+            }
+        }
+        $purchaseParams = [
+            ':purchase_start_date' => $purchaseStartDate,
+            ':purchase_end_date' => (new DateTime($purchaseEndDate))->modify('+1 day')->format('Y-m-d'),
+            ':purchase_po_start_date' => $purchaseStartDate,
+            ':purchase_po_end_date' => (new DateTime($purchaseEndDate))->modify('+1 day')->format('Y-m-d'),
         ];
         $spendParams = [
             ':filter_year' => $selectedYear,
@@ -355,8 +464,133 @@ if ($conn) {
                 WHERE isih.drefno = 'WI'
                   AND isih.isitrntype = 'DO'
                   AND isih.isistat = 'E'
-                  AND isih.isidate >= :start_date
-                  AND isih.isidate < :end_date
+                  AND isih.isidate >= :loading_start_date
+                  AND isih.isidate < :loading_end_date
+            )
+        ";
+        $warehouseReceiptSourceCte = "
+            WITH warehouse_receipt_source AS (
+                SELECT
+                    ipoh.ipono,
+                    ipoh.ipodate,
+                    MONTH(ipoh.ipodate) AS month_no,
+                    ipod.iprod,
+                    COALESCE(NULLIF(LTRIM(RTRIM(iim.idesc1)), ''), N'ไม่ระบุสินค้า') AS idesc1,
+                    COALESCE(NULLIF(LTRIM(RTRIM(customer.custnme)), ''), N'ไม่ระบุลูกค้า') AS custnme,
+                    COALESCE(NULLIF(LTRIM(RTRIM(unit.uncd)), ''), '') AS uncd,
+                    COALESCE(iim.iioq, 1) AS iioq,
+                    COALESCE(ili_tag.ReceiveQuantity, ipod.iqty, 0) AS rcv_qty,
+                    CASE
+                        WHEN UPPER(COALESCE(NULLIF(LTRIM(RTRIM(unit.uncd)), ''), '')) = 'KG'
+                            THEN COALESCE(ili_tag.ReceiveQuantity, ipod.iqty, 0)
+                        ELSE COALESCE(ili_tag.ReceiveQuantity, ipod.iqty, 0) * COALESCE(iim.iioq, 1)
+                    END AS receipt_weight_kg
+                FROM ipoh
+                INNER JOIN ipod
+                    ON ipoh.ipono = ipod.ipono
+                   AND ipoh.ipoveninv = 'WR'
+                INNER JOIN iim
+                    ON ipod.iprod = iim.iprod
+                LEFT JOIN unit
+                    ON ipod.uncd = unit.uncd
+                LEFT JOIN customer
+                    ON ipoh.intcd = customer.custcd
+                LEFT JOIN ili_tag
+                    ON ipod.ipono = ili_tag.ipono
+                   AND ipod.seqno = ili_tag.ipod_seqno
+                   AND ili_tag.SeqNo < 800
+                   AND ili_tag.lotrunningno > 0
+                WHERE ipoh.ipostat <> 'X'
+                  AND ipoh.ipodate IS NOT NULL
+                  AND ipoh.ipodate >= :loading_start_date
+                  AND ipoh.ipodate < :loading_end_date
+            )
+        ";
+        $purchaseSourceCte = "
+            WITH purchase_lines AS (
+                SELECT
+                    prh.prno,
+                    prd.seqno,
+                    prh.prdate,
+                    prd.duedate,
+                    prd.iprod,
+                    COALESCE(NULLIF(LTRIM(RTRIM(iim.idesc1)), ''), N'ไม่ระบุสินค้า') AS idesc1,
+                    COALESCE(prd.iqty, 0) AS iqty,
+                    COALESCE(prd.pqty, 0) AS pqty,
+                    prd.k01 AS dept,
+                    COALESCE(NULLIF(LTRIM(RTRIM(cdp.depnm)), ''), N'ไม่ระบุหน่วยงาน') AS depnm
+                FROM prh
+                INNER JOIN prd
+                    ON prh.prno = prd.prno
+                   AND prh.prstat NOT IN ('N', 'X')
+                LEFT JOIN iim ON iim.iprod = prd.iprod
+                LEFT JOIN cdp ON cdp.depcd = prd.k01
+                WHERE prh.prdate >= :purchase_start_date
+                  AND prh.prdate < :purchase_end_date
+            ),
+            po_links AS (
+                SELECT
+                    impodt.prno,
+                    impodt.docseq,
+                    impodt.pono,
+                    impohd.podate,
+                    impohd.postat,
+                    impohd.spprcd,
+                    COALESCE(NULLIF(LTRIM(RTRIM(supplier.spprnme)), ''), N'ไม่ระบุ Supplier') AS spprnme
+                FROM impodt
+                INNER JOIN impohd
+                    ON impohd.pono = impodt.pono
+                   AND impohd.postat <> 'X'
+                LEFT JOIN supplier ON supplier.spprcd = impohd.spprcd
+            ),
+            po_documents AS (
+                SELECT
+                    impohd.pono,
+                    impohd.podate,
+                    impohd.postat,
+                    impohd.spprcd,
+                    COALESCE(NULLIF(LTRIM(RTRIM(supplier.spprnme)), ''), N'ไม่ระบุ Supplier') AS spprnme
+                FROM impohd
+                LEFT JOIN supplier ON supplier.spprcd = impohd.spprcd
+                WHERE impohd.podate >= :purchase_po_start_date
+                  AND impohd.podate < :purchase_po_end_date
+                  AND impohd.postat <> 'X'
+            ),
+            purchase_source AS (
+                SELECT
+                    pl.prno,
+                    pl.seqno,
+                    pl.prdate,
+                    pl.duedate,
+                    pl.iprod,
+                    pl.idesc1,
+                    pl.iqty,
+                    pl.pqty,
+                    pl.dept,
+                    pl.depnm,
+                    COUNT(DISTINCT po_links.pono) AS po_count,
+                    MAX(CASE po_links.postat
+                        WHEN 'R' THEN 4
+                        WHEN 'T' THEN 3
+                        WHEN 'N' THEN 2
+                        WHEN 'E' THEN 1
+                        ELSE 0
+                    END) AS postat_rank
+                FROM purchase_lines AS pl
+                LEFT JOIN po_links
+                    ON po_links.prno = pl.prno
+                   AND po_links.docseq = pl.seqno
+                GROUP BY
+                    pl.prno,
+                    pl.seqno,
+                    pl.prdate,
+                    pl.duedate,
+                    pl.iprod,
+                    pl.idesc1,
+                    pl.iqty,
+                    pl.pqty,
+                    pl.dept,
+                    pl.depnm
             )
         ";
         $spendFilterSql = "
@@ -392,32 +626,40 @@ if ($conn) {
                 COALESCE(SUM(CASE WHEN load_type = 'domestic' THEN loaded_kg ELSE 0 END), 0) AS loading_domestic_kg
             FROM loading_source
             ",
-            $params
+            $loadingParams
         );
         $summary['loading_kg'] = isset($loadingSummary['loading_kg']) ? (float) $loadingSummary['loading_kg'] : 0;
         $summary['loading_box'] = isset($loadingSummary['loading_box']) ? (float) $loadingSummary['loading_box'] : 0;
         $summary['loading_export_kg'] = isset($loadingSummary['loading_export_kg']) ? (float) $loadingSummary['loading_export_kg'] : 0;
         $summary['loading_domestic_kg'] = isset($loadingSummary['loading_domestic_kg']) ? (float) $loadingSummary['loading_domestic_kg'] : 0;
 
+        $warehouseReceiptSummary = fetchOneRow(
+            $conn,
+            $warehouseReceiptSourceCte . "
+            SELECT COALESCE(SUM(receipt_weight_kg), 0) AS warehouse_receipt_qty
+            FROM warehouse_receipt_source
+            ",
+            $loadingParams
+        );
+        $summary['warehouse_receipt_qty'] = isset($warehouseReceiptSummary['warehouse_receipt_qty']) ? (float) $warehouseReceiptSummary['warehouse_receipt_qty'] : 0;
+
         $prCountRow = fetchOneRow(
             $conn,
-            "
-            SELECT COUNT(*) AS pr_count
-            FROM prh
-            WHERE prdate >= :start_date AND prdate < :end_date
+            $purchaseSourceCte . "
+            SELECT COUNT(DISTINCT prno) AS pr_count
+            FROM purchase_source
             ",
-            $params
+            $purchaseParams
         );
         $summary['pr_count'] = isset($prCountRow['pr_count']) ? (int) $prCountRow['pr_count'] : 0;
 
         $poCountRow = fetchOneRow(
             $conn,
-            "
-            SELECT COUNT(*) AS po_count
-            FROM ipoh
-            WHERE ipodate >= :start_date AND ipodate < :end_date
+            $purchaseSourceCte . "
+            SELECT COUNT(DISTINCT pono) AS po_count
+            FROM po_documents
             ",
-            $params
+            $purchaseParams
         );
         $summary['po_count'] = isset($poCountRow['po_count']) ? (int) $poCountRow['po_count'] : 0;
 
@@ -540,7 +782,7 @@ if ($conn) {
             GROUP BY load_type, month_no
             ORDER BY load_type, month_no
             ",
-            $params
+            $loadingParams
         );
 
         $loadingDetailRows = fetchAllRows(
@@ -556,7 +798,7 @@ if ($conn) {
             GROUP BY load_type, date_key, do_cust
             ORDER BY load_type, date_key DESC, total_kg DESC, do_cust
             ",
-            $params
+            $loadingParams
         );
 
         $loadingTopProductRows = fetchAllRows(
@@ -572,7 +814,194 @@ if ($conn) {
             GROUP BY load_type, iprod, idesc1
             ORDER BY load_type, total_kg DESC, total_box DESC, idesc1, iprod
             ",
-            $params
+            $loadingParams
+        );
+
+        $warehouseReceiptRows = fetchAllRows(
+            $conn,
+            $warehouseReceiptSourceCte . "
+            SELECT
+                month_no,
+                SUM(receipt_weight_kg) AS total_weight,
+                COUNT(DISTINCT ipono) AS doc_count,
+                COUNT(*) AS line_count
+            FROM warehouse_receipt_source
+            GROUP BY month_no
+            ORDER BY month_no
+            ",
+            $loadingParams
+        );
+
+        $warehouseReceiptCustomerRows = fetchAllRows(
+            $conn,
+            $warehouseReceiptSourceCte . "
+            SELECT TOP 10
+                custnme,
+                SUM(receipt_weight_kg) AS total_weight,
+                COUNT(DISTINCT ipono) AS doc_count,
+                COUNT(*) AS line_count
+            FROM warehouse_receipt_source
+            GROUP BY custnme
+            ORDER BY total_weight DESC, doc_count DESC, custnme
+            ",
+            $loadingParams
+        );
+
+        $warehouseReceiptProductRows = fetchAllRows(
+            $conn,
+            $warehouseReceiptSourceCte . "
+            SELECT TOP 10
+                iprod,
+                idesc1,
+                SUM(receipt_weight_kg) AS total_weight,
+                COUNT(DISTINCT ipono) AS doc_count,
+                COUNT(*) AS line_count
+            FROM warehouse_receipt_source
+            GROUP BY iprod, idesc1
+            ORDER BY total_weight DESC, line_count DESC, idesc1, iprod
+            ",
+            $loadingParams
+        );
+
+        $purchaseMonthlyRows = fetchAllRows(
+            $conn,
+            $purchaseSourceCte . "
+            SELECT
+                month_no,
+                SUM(pr_count) AS pr_count,
+                SUM(po_count) AS po_count
+            FROM (
+                SELECT
+                    MONTH(prdate) AS month_no,
+                    COUNT(DISTINCT prno) AS pr_count,
+                    0 AS po_count
+                FROM purchase_lines
+                GROUP BY MONTH(prdate)
+
+                UNION ALL
+
+                SELECT
+                    MONTH(podate) AS month_no,
+                    0 AS pr_count,
+                    COUNT(DISTINCT pono) AS po_count
+                FROM po_documents
+                GROUP BY MONTH(podate)
+            ) AS monthly_documents
+            GROUP BY month_no
+            ORDER BY month_no
+            ",
+            $purchaseParams
+        );
+
+        $purchaseStatusRows = fetchAllRows(
+            $conn,
+            $purchaseSourceCte . "
+            SELECT
+                CASE
+                    WHEN po_count = 0 THEN 'NO_PO'
+                    WHEN postat_rank = 4 THEN 'R'
+                    WHEN postat_rank = 3 THEN 'T'
+                    WHEN postat_rank = 2 THEN 'N'
+                    WHEN postat_rank = 1 THEN 'E'
+                    ELSE '-'
+                END AS postat,
+                CASE
+                    WHEN po_count = 0 THEN N'ยังไม่เปิด P/O'
+                    WHEN postat_rank = 4 THEN N'กำลังรับสินค้า'
+                    WHEN postat_rank = 3 THEN N'รอรับ'
+                    WHEN postat_rank = 2 THEN N'เปิดใหม่'
+                    WHEN postat_rank = 1 THEN N'จบการรับ'
+                    ELSE N'-'
+                END AS postat_text,
+                COUNT(*) AS line_count,
+                SUM(iqty) AS requested_qty,
+                SUM(pqty) AS purchased_qty
+            FROM purchase_source
+            GROUP BY
+                CASE
+                    WHEN po_count = 0 THEN 'NO_PO'
+                    WHEN postat_rank = 4 THEN 'R'
+                    WHEN postat_rank = 3 THEN 'T'
+                    WHEN postat_rank = 2 THEN 'N'
+                    WHEN postat_rank = 1 THEN 'E'
+                    ELSE '-'
+                END,
+                CASE
+                    WHEN po_count = 0 THEN N'ยังไม่เปิด P/O'
+                    WHEN postat_rank = 4 THEN N'กำลังรับสินค้า'
+                    WHEN postat_rank = 3 THEN N'รอรับ'
+                    WHEN postat_rank = 2 THEN N'เปิดใหม่'
+                    WHEN postat_rank = 1 THEN N'จบการรับ'
+                    ELSE N'-'
+                END
+            ORDER BY
+                MIN(CASE
+                    WHEN po_count = 0 THEN 1
+                    WHEN postat_rank = 2 THEN 2
+                    WHEN postat_rank = 3 THEN 3
+                    WHEN postat_rank = 4 THEN 4
+                    WHEN postat_rank = 1 THEN 5
+                    ELSE 6
+                END)
+            ",
+            $purchaseParams
+        );
+
+        $purchaseDepartmentRows = fetchAllRows(
+            $conn,
+            $purchaseSourceCte . "
+            SELECT TOP 10
+                dept,
+                depnm,
+                COUNT(DISTINCT prno) AS pr_count,
+                COUNT(*) AS line_count,
+                SUM(CASE WHEN po_count > 0 THEN 1 ELSE 0 END) AS po_line_count,
+                SUM(iqty) AS requested_qty,
+                SUM(pqty) AS purchased_qty
+            FROM purchase_source
+            GROUP BY dept, depnm
+            ORDER BY line_count DESC, requested_qty DESC, depnm
+            ",
+            $purchaseParams
+        );
+
+        $purchaseSupplierRows = fetchAllRows(
+            $conn,
+            $purchaseSourceCte . "
+            SELECT TOP 10
+                po_links.spprcd,
+                po_links.spprnme,
+                COUNT(DISTINCT po_links.pono) AS po_count,
+                COUNT(DISTINCT pl.prno) AS pr_count,
+                COUNT(*) AS line_count,
+                SUM(pl.iqty) AS requested_qty,
+                SUM(pl.pqty) AS purchased_qty
+            FROM purchase_lines AS pl
+            INNER JOIN po_links
+                ON po_links.prno = pl.prno
+               AND po_links.docseq = pl.seqno
+            GROUP BY po_links.spprcd, po_links.spprnme
+            ORDER BY po_count DESC, line_count DESC, po_links.spprnme
+            ",
+            $purchaseParams
+        );
+
+        $purchaseProductRows = fetchAllRows(
+            $conn,
+            $purchaseSourceCte . "
+            SELECT TOP 10
+                iprod,
+                idesc1,
+                COUNT(DISTINCT prno) AS pr_count,
+                COUNT(*) AS line_count,
+                SUM(CASE WHEN po_count > 0 THEN 1 ELSE 0 END) AS po_line_count,
+                SUM(iqty) AS requested_qty,
+                SUM(pqty) AS purchased_qty
+            FROM purchase_source
+            GROUP BY iprod, idesc1
+            ORDER BY line_count DESC, pr_count DESC, requested_qty DESC, idesc1
+            ",
+            $purchaseParams
         );
 
     } catch (PDOException $e) {
@@ -662,6 +1091,82 @@ $loadingExportTopProductChart = buildTopItemsChart(
     'total_kg',
     10
 );
+$warehouseReceiptWeightSeries = buildMonthlySeries($warehouseReceiptRows, 'total_weight');
+$warehouseReceiptDocSeries = buildMonthlySeries($warehouseReceiptRows, 'doc_count');
+$warehouseReceiptCustomerChart = buildTopItemsChart(
+    $warehouseReceiptCustomerRows,
+    function ($row) {
+        return trim((string) $row['custnme']);
+    },
+    'total_weight',
+    10
+);
+$warehouseReceiptProductChart = buildTopItemsChart(
+    $warehouseReceiptProductRows,
+    function ($row) {
+        $productName = trim((string) (isset($row['idesc1']) ? $row['idesc1'] : ''));
+
+        return $productName;
+    },
+    'total_weight',
+    10
+);
+$purchaseMonthlyPrSeries = buildMonthlySeries($purchaseMonthlyRows, 'pr_count');
+$purchaseMonthlyPoSeries = buildMonthlySeries($purchaseMonthlyRows, 'po_count');
+$purchaseStatusLabels = [];
+$purchaseStatusLineSeries = [];
+$purchaseStatusQtySeries = [];
+$purchaseStatusPurchasedQtySeries = [];
+foreach ($purchaseStatusRows as $row) {
+    $purchaseStatusLabels[] = trim((string) $row['postat_text']);
+    $purchaseStatusLineSeries[] = (float) (isset($row['line_count']) ? $row['line_count'] : 0);
+    $purchaseStatusQtySeries[] = (float) (isset($row['requested_qty']) ? $row['requested_qty'] : 0);
+    $purchaseStatusPurchasedQtySeries[] = (float) (isset($row['purchased_qty']) ? $row['purchased_qty'] : 0);
+}
+$purchaseDepartmentLabels = [];
+$purchaseDepartmentLineSeries = [];
+$purchaseDepartmentQtySeries = [];
+$purchaseDepartmentPoLineSeries = [];
+foreach ($purchaseDepartmentRows as $row) {
+    $departmentCode = trim((string) (isset($row['dept']) ? $row['dept'] : ''));
+    $departmentName = trim((string) (isset($row['depnm']) ? $row['depnm'] : ''));
+    $purchaseDepartmentLabels[] = $departmentCode !== ''
+        ? $departmentCode . ' - ' . $departmentName
+        : $departmentName;
+    $purchaseDepartmentLineSeries[] = (float) (isset($row['line_count']) ? $row['line_count'] : 0);
+    $purchaseDepartmentQtySeries[] = (float) (isset($row['requested_qty']) ? $row['requested_qty'] : 0);
+    $purchaseDepartmentPoLineSeries[] = (float) (isset($row['po_line_count']) ? $row['po_line_count'] : 0);
+}
+$purchaseSupplierLabels = [];
+$purchaseSupplierPoSeries = [];
+$purchaseSupplierPrSeries = [];
+$purchaseSupplierLineSeries = [];
+foreach ($purchaseSupplierRows as $row) {
+    $supplierCode = trim((string) (isset($row['spprcd']) ? $row['spprcd'] : ''));
+    $supplierName = trim((string) (isset($row['spprnme']) ? $row['spprnme'] : ''));
+    $purchaseSupplierLabels[] = $supplierCode !== ''
+        ? $supplierCode . ' - ' . $supplierName
+        : $supplierName;
+    $purchaseSupplierPoSeries[] = (float) (isset($row['po_count']) ? $row['po_count'] : 0);
+    $purchaseSupplierPrSeries[] = (float) (isset($row['pr_count']) ? $row['pr_count'] : 0);
+    $purchaseSupplierLineSeries[] = (float) (isset($row['line_count']) ? $row['line_count'] : 0);
+}
+$purchaseProductLabels = [];
+$purchaseProductLineSeries = [];
+$purchaseProductPrSeries = [];
+$purchaseProductPoLineSeries = [];
+$purchaseProductQtySeries = [];
+foreach ($purchaseProductRows as $row) {
+    $productCode = trim((string) (isset($row['iprod']) ? $row['iprod'] : ''));
+    $productName = trim((string) (isset($row['idesc1']) ? $row['idesc1'] : ''));
+    $purchaseProductLabels[] = $productCode !== ''
+        ? $productCode . ' - ' . $productName
+        : $productName;
+    $purchaseProductLineSeries[] = (float) (isset($row['line_count']) ? $row['line_count'] : 0);
+    $purchaseProductPrSeries[] = (float) (isset($row['pr_count']) ? $row['pr_count'] : 0);
+    $purchaseProductPoLineSeries[] = (float) (isset($row['po_line_count']) ? $row['po_line_count'] : 0);
+    $purchaseProductQtySeries[] = (float) (isset($row['requested_qty']) ? $row['requested_qty'] : 0);
+}
 $chartPayload = [
     'monthLabels' => $monthLabels,
     'spendLabels' => $spendLabels,
@@ -691,6 +1196,43 @@ $chartPayload = [
     'loadingExportTopProductBoxSeries' => array_values(array_map(function ($row) {
         return (float) (isset($row['total_box']) ? $row['total_box'] : 0);
     }, $loadingExportTopProductChart['rows'])),
+    'warehouseReceiptWeightSeries' => $warehouseReceiptWeightSeries,
+    'warehouseReceiptDocSeries' => $warehouseReceiptDocSeries,
+    'warehouseReceiptCustomerLabels' => $warehouseReceiptCustomerChart['labels'],
+    'warehouseReceiptCustomerQtySeries' => $warehouseReceiptCustomerChart['values'],
+    'warehouseReceiptCustomerDocSeries' => array_values(array_map(function ($row) {
+        return (float) (isset($row['doc_count']) ? $row['doc_count'] : 0);
+    }, $warehouseReceiptCustomerChart['rows'])),
+    'warehouseReceiptCustomerLineSeries' => array_values(array_map(function ($row) {
+        return (float) (isset($row['line_count']) ? $row['line_count'] : 0);
+    }, $warehouseReceiptCustomerChart['rows'])),
+    'warehouseReceiptProductLabels' => $warehouseReceiptProductChart['labels'],
+    'warehouseReceiptProductQtySeries' => $warehouseReceiptProductChart['values'],
+    'warehouseReceiptProductDocSeries' => array_values(array_map(function ($row) {
+        return (float) (isset($row['doc_count']) ? $row['doc_count'] : 0);
+    }, $warehouseReceiptProductChart['rows'])),
+    'warehouseReceiptProductLineSeries' => array_values(array_map(function ($row) {
+        return (float) (isset($row['line_count']) ? $row['line_count'] : 0);
+    }, $warehouseReceiptProductChart['rows'])),
+    'purchaseMonthlyPrSeries' => $purchaseMonthlyPrSeries,
+    'purchaseMonthlyPoSeries' => $purchaseMonthlyPoSeries,
+    'purchaseStatusLabels' => $purchaseStatusLabels,
+    'purchaseStatusLineSeries' => $purchaseStatusLineSeries,
+    'purchaseStatusQtySeries' => $purchaseStatusQtySeries,
+    'purchaseStatusPurchasedQtySeries' => $purchaseStatusPurchasedQtySeries,
+    'purchaseDepartmentLabels' => $purchaseDepartmentLabels,
+    'purchaseDepartmentLineSeries' => $purchaseDepartmentLineSeries,
+    'purchaseDepartmentQtySeries' => $purchaseDepartmentQtySeries,
+    'purchaseDepartmentPoLineSeries' => $purchaseDepartmentPoLineSeries,
+    'purchaseSupplierLabels' => $purchaseSupplierLabels,
+    'purchaseSupplierPoSeries' => $purchaseSupplierPoSeries,
+    'purchaseSupplierPrSeries' => $purchaseSupplierPrSeries,
+    'purchaseSupplierLineSeries' => $purchaseSupplierLineSeries,
+    'purchaseProductLabels' => $purchaseProductLabels,
+    'purchaseProductLineSeries' => $purchaseProductLineSeries,
+    'purchaseProductPrSeries' => $purchaseProductPrSeries,
+    'purchaseProductPoLineSeries' => $purchaseProductPoLineSeries,
+    'purchaseProductQtySeries' => $purchaseProductQtySeries,
 ];
 
 $spendTotalValue = isset($summary['spend_total']) ? (float) $summary['spend_total'] : 0;
@@ -714,6 +1256,31 @@ $spendDepartmentCount = count($spendByDepartment);
 $spendChartHeight = max(360, (int) ($spendDepartmentCount * 42) + 120);
 $generatedAt = new DateTime('now', new DateTimeZone('Asia/Bangkok'));
 $generatedAtLabel = formatThaiDateTime($generatedAt, $thaiMonths);
+$loadingRangeLabel = 'ทั้งปี ' . formatDisplayYear($selectedYear);
+if ($loadingStartDate !== '' && $loadingEndDate !== '') {
+    $loadingRangeStartDisplay = new DateTime($loadingStartDate);
+    $loadingRangeEndDisplay = new DateTime($loadingEndDate);
+    $loadingStartMonthNumber = (int) $loadingRangeStartDisplay->format('n');
+    $loadingEndMonthNumber = (int) $loadingRangeEndDisplay->format('n');
+    $loadingStartMonthLabel = isset($thaiMonths[$loadingStartMonthNumber]) ? $thaiMonths[$loadingStartMonthNumber] : $loadingRangeStartDisplay->format('M');
+    $loadingEndMonthLabel = isset($thaiMonths[$loadingEndMonthNumber]) ? $thaiMonths[$loadingEndMonthNumber] : $loadingRangeEndDisplay->format('M');
+    $loadingRangeLabel = $loadingRangeStartDisplay->format('j') . ' ' . $loadingStartMonthLabel
+        . ' - ' . $loadingRangeEndDisplay->format('j') . ' ' . $loadingEndMonthLabel;
+}
+$purchaseRangeLabel = 'ทั้งปี ' . formatDisplayYear($selectedYear);
+if ($purchaseStartDate !== '' && $purchaseEndDate !== '') {
+    $purchaseRangeStartDisplay = new DateTime($purchaseStartDate);
+    $purchaseRangeEndDisplay = new DateTime($purchaseEndDate);
+    $purchaseStartMonthNumber = (int) $purchaseRangeStartDisplay->format('n');
+    $purchaseEndMonthNumber = (int) $purchaseRangeEndDisplay->format('n');
+    $purchaseStartMonthLabel = isset($thaiMonths[$purchaseStartMonthNumber]) ? $thaiMonths[$purchaseStartMonthNumber] : $purchaseRangeStartDisplay->format('M');
+    $purchaseEndMonthLabel = isset($thaiMonths[$purchaseEndMonthNumber]) ? $thaiMonths[$purchaseEndMonthNumber] : $purchaseRangeEndDisplay->format('M');
+    $purchaseRangeLabel = $purchaseRangeStartDisplay->format('j') . ' ' . $purchaseStartMonthLabel
+        . ' - ' . $purchaseRangeEndDisplay->format('j') . ' ' . $purchaseEndMonthLabel;
+}
+$purchaseSummaryNote = $hasCustomPurchaseDates
+    ? 'เอกสารในช่วงวันที่ ' . $purchaseRangeLabel
+    : 'เอกสารที่เปิดในปี ' . $selectedYear;
 $spendFilterTokens = ['ปี ' . formatDisplayYear($selectedYear)];
 if ($selectedMonth >= 1 && isset($thaiMonths[$selectedMonth])) {
     $spendFilterTokens[] = 'เดือน ' . $thaiMonths[$selectedMonth];
@@ -742,6 +1309,14 @@ if ($selectedProdStart !== '') {
 }
 if ($selectedProdEnd !== '') {
     $filterQuery['prod_end'] = $selectedProdEnd;
+}
+if ($hasCustomLoadDates) {
+    $filterQuery['load_start'] = $loadingStartDate;
+    $filterQuery['load_end'] = $loadingEndDate;
+}
+if ($hasCustomPurchaseDates) {
+    $filterQuery['purchase_start'] = $purchaseStartDate;
+    $filterQuery['purchase_end'] = $purchaseEndDate;
 }
 $retryUrl = '?' . http_build_query($filterQuery);
 $clearFiltersQuery = ['year' => $selectedYear];
@@ -784,10 +1359,26 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
         }());
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="assets/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/th.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="assets/css/dashboard.css?v=20260616-standard-separation">
 </head>
-<body>
-    <main class="shell" id="dashboardShell">
+<body class="is-dashboard-loading" data-active-section="budget">
+    <div class="section-ambient-gallery" aria-hidden="true">
+        <div class="section-ambient-layer" data-section-art="budget"></div>
+        <div class="section-ambient-layer" data-section-art="purchase"></div>
+        <div class="section-ambient-layer" data-section-art="production"></div>
+        <div class="section-ambient-layer" data-section-art="warehouse"></div>
+    </div>
+    <div class="dashboard-loading-overlay" id="dashboardLoadingOverlay" aria-hidden="false">
+        <div class="dashboard-loading-card" role="status" aria-live="assertive" aria-atomic="true">
+            <span class="dashboard-loading-spinner" aria-hidden="true"></span>
+            <strong class="dashboard-loading-title" id="dashboardLoadingMessage">กำลังโหลดแดชบอร์ด</strong>
+            <p class="dashboard-loading-copy" id="dashboardLoadingDetail">กรุณารอสักครู่ ระบบกำลังเตรียมข้อมูลล่าสุดเพื่อแสดงบนหน้าจอ</p>
+        </div>
+    </div>
+    <main class="shell" id="dashboardShell" aria-busy="true">
         <header class="dashboard-header" aria-labelledby="pageTitle">
             <div class="toolbar">
                 <div class="toolbar-copy">
@@ -816,6 +1407,10 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
                         <input type="hidden" name="budgetdesc" value="<?php echo htmlspecialchars($selectedBudgetDesc, ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="prod_start" value="<?php echo htmlspecialchars($selectedProdStart, ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="prod_end" value="<?php echo htmlspecialchars($selectedProdEnd, ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="load_start" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="load_end" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="purchase_start" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="purchase_end" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
                         <div class="filter-field">
                             <label for="year">เลือกปี</label>
                             <select name="year" id="year">
@@ -834,111 +1429,6 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
                 </div>
             </div>
 
-            <section class="summary-strip" aria-label="สรุปตัวชี้วัดหลัก">
-                <div class="summary-card summary-card-detailed">
-                    <div class="summary-label">ยอดใช้จ่ายจริง</div>
-                    <div class="summary-value">
-                        <span class="counter-value" data-counter-format="currency" data-counter-value="<?php echo htmlspecialchars((string) $spendTotalValue, ENT_QUOTES, 'UTF-8'); ?>">
-                            <?php echo formatCurrency($spendTotalValue); ?>
-                        </span>
-                    </div>
-                    <div class="summary-note"><?php echo htmlspecialchars($spendSummaryNote, ENT_QUOTES, 'UTF-8'); ?></div>
-                    <div class="summary-detail-grid summary-detail-grid-two-up">
-                        <div class="summary-detail-item">
-                            <span class="summary-detail-label">งบสุทธิ</span>
-                            <span class="summary-detail-value">
-                                <span class="counter-value" data-counter-format="currency" data-counter-value="<?php echo htmlspecialchars((string) $spendBudgetTotalValue, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo formatCurrency($spendBudgetTotalValue); ?>
-                                </span>
-                            </span>
-                        </div>
-                        <div class="summary-detail-item">
-                            <span class="summary-detail-label">งบคงเหลือ</span>
-                            <span class="summary-detail-value">
-                                <span class="counter-value" data-counter-format="currency" data-counter-value="<?php echo htmlspecialchars((string) $spendBalanceTotalValue, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo formatCurrency($spendBalanceTotalValue); ?>
-                                </span>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-label">ปริมาณการผลิต</div>
-                    <div class="summary-value">
-                        <span class="counter-value" data-counter-format="quantity" data-counter-value="<?php echo htmlspecialchars((string) $productionQtyValue, ENT_QUOTES, 'UTF-8'); ?>">
-                            <?php echo formatQuantity($productionQtyValue); ?>
-                        </span>
-                    </div>
-                    <div class="summary-note">
-                        <?php if ($hasCustomProdDates): ?>
-                            รวมน้ำหนักผลิต (กก.) ในช่วงวันที่ <?php echo htmlspecialchars($productionDailyRangeLabel, ENT_QUOTES, 'UTF-8'); ?>
-                        <?php else: ?>
-                            รวมน้ำหนักผลิต (กก.) จาก `iqty x iioq` ใน `vw_shop_in_out` ของปีที่เลือก
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <div class="summary-card summary-card-detailed">
-                    <div class="summary-label">การโหลดสินค้าออก</div>
-                    <div class="summary-value">
-                        <span class="counter-value" data-counter-format="quantity" data-counter-value="<?php echo htmlspecialchars((string) $loadingKgValue, ENT_QUOTES, 'UTF-8'); ?>">
-                            <?php echo formatQuantity($loadingKgValue); ?>
-                        </span>
-                    </div>
-                    <div class="summary-note">รวมน้ำหนักโหลด (กก.) จาก `isih / isid` ของปีที่เลือก</div>
-                    <div class="summary-detail-grid summary-detail-grid-two-up">
-                        <div class="summary-detail-item">
-                            <span class="summary-detail-label">จำนวนกล่อง</span>
-                            <span class="summary-detail-value">
-                                <span class="counter-value" data-counter-format="quantity" data-counter-value="<?php echo htmlspecialchars((string) $loadingBoxValue, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo formatQuantity($loadingBoxValue); ?>
-                                </span>
-                            </span>
-                        </div>
-                        <div class="summary-detail-item">
-                            <span class="summary-detail-label">โหลดนอกประเทศ</span>
-                            <span class="summary-detail-value">
-                                <span class="counter-value" data-counter-format="quantity" data-counter-value="<?php echo htmlspecialchars((string) $loadingExportKgValue, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo formatQuantity($loadingExportKgValue); ?>
-                                </span>
-                                กก.
-                            </span>
-                        </div>
-                        <div class="summary-detail-item">
-                            <span class="summary-detail-label">โหลดในประเทศ</span>
-                            <span class="summary-detail-value">
-                                <span class="counter-value" data-counter-format="quantity" data-counter-value="<?php echo htmlspecialchars((string) $loadingDomesticKgValue, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo formatQuantity($loadingDomesticKgValue); ?>
-                                </span>
-                                กก.
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <div class="summary-card summary-card-detailed">
-                    <div class="summary-label">เอกสารจัดซื้อ</div>
-                    <div class="summary-detail-grid summary-detail-grid-two-up">
-                        <div class="summary-detail-item">
-                            <span class="summary-detail-label">PR</span>
-                            <span class="summary-detail-value">
-                                <span class="counter-value" data-counter-format="number" data-counter-value="<?php echo htmlspecialchars((string) $prCountValue, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo formatNumber($prCountValue); ?>
-                                </span>
-                                รายการ
-                            </span>
-                        </div>
-                        <div class="summary-detail-item">
-                            <span class="summary-detail-label">PO</span>
-                            <span class="summary-detail-value">
-                                <span class="counter-value" data-counter-format="number" data-counter-value="<?php echo htmlspecialchars((string) $poCountValue, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <?php echo formatNumber($poCountValue); ?>
-                                </span>
-                                รายการ
-                            </span>
-                        </div>
-                    </div>
-                    <div class="summary-note">เอกสารที่เปิดในปี <?php echo htmlspecialchars((string) $selectedYear, ENT_QUOTES, 'UTF-8'); ?></div>
-                </div>
-            </section>
         </header>
 
         <?php if ($errorMessage !== null): ?>
@@ -950,7 +1440,17 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
                 </div>
             </div>
         <?php else: ?>
-            <section class="dashboard">
+            <section class="dashboard" aria-label="กราฟแยกตามส่วนงาน">
+                <div class="chart-section-switcher" aria-label="เลือกหมวดกราฟ">
+                    <div class="chart-section-tabs" role="tablist" aria-label="หมวดกราฟ">
+                        <button type="button" class="chart-section-tab is-active" id="chartSectionBudgetTab" role="tab" aria-selected="true" aria-controls="chartSectionBudget" data-chart-section-target="budget">งบประมาณ</button>
+                        <button type="button" class="chart-section-tab" id="chartSectionPurchaseTab" role="tab" aria-selected="false" aria-controls="chartSectionPurchase" data-chart-section-target="purchase">จัดซื้อ</button>
+                        <button type="button" class="chart-section-tab" id="chartSectionProductionTab" role="tab" aria-selected="false" aria-controls="chartSectionProduction" data-chart-section-target="production">การผลิต</button>
+                        <button type="button" class="chart-section-tab" id="chartSectionWarehouseTab" role="tab" aria-selected="false" aria-controls="chartSectionWarehouse" data-chart-section-target="warehouse">คลังสินค้า</button>
+                    </div>
+                </div>
+
+                <div class="chart-section is-active" id="chartSectionBudget" role="tabpanel" aria-labelledby="chartSectionBudgetTab" data-chart-section="budget">
                 <article class="panel panel-full spend-panel">
                     <div class="panel-header">
                         <div>
@@ -961,8 +1461,13 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
                     </div>
                     <form class="chart-filter-form" id="spendFilterForm" method="get" aria-label="ตัวกรองกราฟการใช้จ่าย">
                         <input type="hidden" name="year" value="<?php echo (int) $selectedYear; ?>">
+                        <input type="hidden" name="chart_section" value="budget">
                         <input type="hidden" name="prod_start" value="<?php echo htmlspecialchars($selectedProdStart, ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="prod_end" value="<?php echo htmlspecialchars($selectedProdEnd, ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="load_start" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="load_end" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="purchase_start" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="hidden" name="purchase_end" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
                         <div class="filter-field">
                             <label for="chartMonth">เดือน</label>
                             <select name="month" id="chartMonth">
@@ -1040,20 +1545,362 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
                         </div>
                     </details>
                 </article>
+                </div>
 
-                <form id="productionDailyFilterForm" method="get" aria-label="ตัวกรองการผลิตรายวัน">
+                <div class="chart-section" id="chartSectionPurchase" role="tabpanel" aria-labelledby="chartSectionPurchaseTab" data-chart-section="purchase">
+                <form id="purchaseDateFilterForm" method="get" aria-label="ตัวกรองวันที่จัดซื้อ">
                     <input type="hidden" name="year" value="<?php echo (int) $selectedYear; ?>">
+                    <input type="hidden" name="chart_section" value="purchase">
                     <input type="hidden" name="month" value="<?php echo $selectedMonth >= 1 ? (int) $selectedMonth : ''; ?>">
                     <input type="hidden" name="budgetcd" value="<?php echo htmlspecialchars($selectedBudgetCode, ENT_QUOTES, 'UTF-8'); ?>">
                     <input type="hidden" name="budgetdesc" value="<?php echo htmlspecialchars($selectedBudgetDesc, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="prod_start" value="<?php echo htmlspecialchars($selectedProdStart, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="prod_end" value="<?php echo htmlspecialchars($selectedProdEnd, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="load_start" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="load_end" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+
+                    <div class="filter-field">
+                        <label for="purchaseStart">วันที่เริ่มต้น</label>
+                        <input type="text" name="purchase_start" id="purchaseStart" autocomplete="off" placeholder="dd/MM/yyyy" data-date-picker="thai" readonly aria-haspopup="dialog" value="<?php echo htmlspecialchars(formatFilterDateInput($purchaseStartDate), ENT_QUOTES, 'UTF-8'); ?>">
+                    </div>
+                    <div class="filter-field">
+                        <label for="purchaseEnd">วันที่สิ้นสุด</label>
+                        <input type="text" name="purchase_end" id="purchaseEnd" autocomplete="off" placeholder="dd/MM/yyyy" data-date-picker="thai" readonly aria-haspopup="dialog" value="<?php echo htmlspecialchars(formatFilterDateInput($purchaseEndDate), ENT_QUOTES, 'UTF-8'); ?>">
+                    </div>
+                    <div class="filter-actions">
+                        <button type="submit">กรองข้อมูล</button>
+                        <?php
+                        $clearPurchaseDatesQuery = $filterQuery;
+                        unset($clearPurchaseDatesQuery['purchase_start']);
+                        unset($clearPurchaseDatesQuery['purchase_end']);
+                        $clearPurchaseDatesQuery['chart_section'] = 'purchase';
+                        $clearPurchaseDatesUrl = '?' . http_build_query($clearPurchaseDatesQuery);
+                        ?>
+                        <a class="secondary-action secondary-action-quiet" href="<?php echo htmlspecialchars($clearPurchaseDatesUrl, ENT_QUOTES, 'UTF-8'); ?>">กลับค่าเริ่มต้น</a>
+                    </div>
+                </form>
+
+                <article class="panel panel-full">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="purchaseMonthlyChartTitle">PR และ PO รายเดือน</h2>
+                            <p class="panel-desc">นับ PR จาก `prh.prdate` และ PO จาก `impohd.podate` ตามช่วงวันที่เลือก โดยตัดรายการที่ถูกยกเลิกออก</p>
+                        </div>
+                        <div class="chip">จัดซื้อ</div>
+                    </div>
+                    <div class="chart-context" aria-label="ตัวกรองวันที่จัดซื้อ">
+                        <span class="chart-context-label">ข้อมูลที่กำลังแสดง</span>
+                        <div class="filter-pill-row">
+                            <span class="filter-pill">ปี <?php echo htmlspecialchars(formatDisplayYear($selectedYear), ENT_QUOTES, 'UTF-8'); ?></span>
+                            <span class="filter-pill">ช่วงวันที่ <?php echo htmlspecialchars($purchaseRangeLabel, ENT_QUOTES, 'UTF-8'); ?></span>
+                        </div>
+                    </div>
+                    <div class="chart-wrap">
+                        <canvas id="purchaseMonthlyChart" role="img" aria-labelledby="purchaseMonthlyChartTitle" aria-describedby="purchaseMonthlyChartDesc purchaseMonthlyChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="purchaseMonthlyChartDesc">กราฟแสดงจำนวนเอกสาร PR และ PO รายเดือนของปีที่เลือก</p>
+                    <ul class="sr-only" id="purchaseMonthlyChartData">
+                        <?php for ($monthIndex = 0; $monthIndex < count($monthLabels); $monthIndex++): ?>
+                            <li><?php echo htmlspecialchars($monthLabels[$monthIndex] . ' PR ' . formatNumber($purchaseMonthlyPrSeries[$monthIndex]) . ' รายการ และ PO ' . formatNumber($purchaseMonthlyPoSeries[$monthIndex]) . ' รายการ', ENT_QUOTES, 'UTF-8'); ?></li>
+                        <?php endfor; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลเป็นตาราง</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>เดือน</th>
+                                        <th>PR</th>
+                                        <th>PO</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php for ($monthIndex = 0; $monthIndex < count($monthLabels); $monthIndex++): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($monthLabels[$monthIndex], ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td><?php echo formatNumber($purchaseMonthlyPrSeries[$monthIndex]); ?></td>
+                                            <td><?php echo formatNumber($purchaseMonthlyPoSeries[$monthIndex]); ?></td>
+                                        </tr>
+                                    <?php endfor; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+
+                <article class="panel panel-half">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="purchaseStatusChartTitle">สถานะรายการจัดซื้อ</h2>
+                            <p class="panel-desc">สรุปรายการ PR detail ตามสถานะ PO: เปิดใหม่, รอรับ, กำลังรับสินค้า, จบการรับ และรายการที่ยังไม่เปิด P/O</p>
+                        </div>
+                        <div class="chip">จัดซื้อ</div>
+                    </div>
+                    <div class="chart-wrap tall">
+                        <canvas id="purchaseStatusChart" role="img" aria-labelledby="purchaseStatusChartTitle" aria-describedby="purchaseStatusChartDesc purchaseStatusChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="purchaseStatusChartDesc">กราฟแสดงจำนวนรายการจัดซื้อแยกตามสถานะ PO</p>
+                    <ul class="sr-only" id="purchaseStatusChartData">
+                        <?php if (!empty($purchaseStatusRows)): ?>
+                            <?php foreach ($purchaseStatusRows as $row): ?>
+                                <li><?php echo htmlspecialchars((string) $row['postat_text'] . ' ' . formatNumber((float) $row['line_count']) . ' รายการ จำนวน PR ' . formatQuantity((float) $row['requested_qty']) . ' และจำนวนเปิดซื้อ ' . formatQuantity((float) $row['purchased_qty']), ENT_QUOTES, 'UTF-8'); ?></li>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <li>ไม่พบข้อมูลสถานะจัดซื้อในปีที่เลือก</li>
+                        <?php endif; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลเป็นตาราง</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>สถานะ</th>
+                                        <th>รายการ</th>
+                                        <th>จำนวน PR</th>
+                                        <th>จำนวนเปิดซื้อ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($purchaseStatusRows)): ?>
+                                        <?php foreach ($purchaseStatusRows as $row): ?>
+                                            <tr>
+                                                <td><?php echo htmlspecialchars((string) $row['postat_text'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td><?php echo formatNumber((float) $row['line_count']); ?></td>
+                                                <td><?php echo formatQuantity((float) $row['requested_qty']); ?></td>
+                                                <td><?php echo formatQuantity((float) $row['purchased_qty']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="4">ไม่พบข้อมูลสถานะจัดซื้อในปีที่เลือก</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+
+                <article class="panel panel-half">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="purchaseDepartmentChartTitle">Top 10 หน่วยงานตามรายการ PR</h2>
+                            <p class="panel-desc">จัดอันดับหน่วยงานจาก `prd.k01 / cdp.depnm` ตามจำนวนรายการ PR detail พร้อมดูจำนวน PR และจำนวนที่เปิดซื้อใน tooltip</p>
+                        </div>
+                        <div class="chip">จัดซื้อ</div>
+                    </div>
+                    <div class="chart-wrap tall">
+                        <canvas id="purchaseDepartmentChart" role="img" aria-labelledby="purchaseDepartmentChartTitle" aria-describedby="purchaseDepartmentChartDesc purchaseDepartmentChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="purchaseDepartmentChartDesc">กราฟแสดง Top 10 หน่วยงานที่มีรายการ PR มากที่สุดในปีที่เลือก</p>
+                    <ul class="sr-only" id="purchaseDepartmentChartData">
+                        <?php if (!empty($purchaseDepartmentRows)): ?>
+                            <?php foreach ($purchaseDepartmentRows as $row): ?>
+                                <?php
+                                    $deptLabel = trim((string) $row['dept']) !== ''
+                                        ? trim((string) $row['dept']) . ' - ' . trim((string) $row['depnm'])
+                                        : trim((string) $row['depnm']);
+                                ?>
+                                <li><?php echo htmlspecialchars($deptLabel . ' PR ' . formatNumber((float) $row['pr_count']) . ' เอกสาร ' . formatNumber((float) $row['line_count']) . ' รายการ จำนวน PR ' . formatQuantity((float) $row['requested_qty']) . ' และเปิดซื้อแล้ว ' . formatNumber((float) $row['po_line_count']) . ' รายการ', ENT_QUOTES, 'UTF-8'); ?></li>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <li>ไม่พบข้อมูลจัดซื้อแยกตามหน่วยงานในปีที่เลือก</li>
+                        <?php endif; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลเป็นตาราง</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>หน่วยงาน</th>
+                                        <th>PR</th>
+                                        <th>รายการ</th>
+                                        <th>เปิด PO แล้ว</th>
+                                        <th>จำนวน PR</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($purchaseDepartmentRows)): ?>
+                                        <?php foreach ($purchaseDepartmentRows as $row): ?>
+                                            <?php
+                                                $deptLabel = trim((string) $row['dept']) !== ''
+                                                    ? trim((string) $row['dept']) . ' - ' . trim((string) $row['depnm'])
+                                                    : trim((string) $row['depnm']);
+                                            ?>
+                                            <tr>
+                                                <td><?php echo htmlspecialchars($deptLabel, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td><?php echo formatNumber((float) $row['pr_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['line_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['po_line_count']); ?></td>
+                                                <td><?php echo formatQuantity((float) $row['requested_qty']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="5">ไม่พบข้อมูลจัดซื้อแยกตามหน่วยงานในปีที่เลือก</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+
+                <article class="panel panel-half">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="purchaseSupplierChartTitle">Top 10 Supplier ตามจำนวน PO</h2>
+                            <p class="panel-desc">จัดอันดับ supplier จาก `impohd.spprcd / supplier.spprnme` ตามจำนวน PO ที่ผูกกับรายการ PR ในปีที่เลือก</p>
+                        </div>
+                        <div class="chip">จัดซื้อ</div>
+                    </div>
+                    <div class="chart-wrap tall">
+                        <canvas id="purchaseSupplierChart" role="img" aria-labelledby="purchaseSupplierChartTitle" aria-describedby="purchaseSupplierChartDesc purchaseSupplierChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="purchaseSupplierChartDesc">กราฟแสดง Top 10 Supplier ที่มีจำนวน PO มากที่สุดในปีที่เลือก</p>
+                    <ul class="sr-only" id="purchaseSupplierChartData">
+                        <?php if (!empty($purchaseSupplierRows)): ?>
+                            <?php foreach ($purchaseSupplierRows as $row): ?>
+                                <?php
+                                    $supplierLabel = trim((string) $row['spprcd']) !== ''
+                                        ? trim((string) $row['spprcd']) . ' - ' . trim((string) $row['spprnme'])
+                                        : trim((string) $row['spprnme']);
+                                ?>
+                                <li><?php echo htmlspecialchars($supplierLabel . ' PO ' . formatNumber((float) $row['po_count']) . ' ใบ PR ' . formatNumber((float) $row['pr_count']) . ' เอกสาร และรายการ ' . formatNumber((float) $row['line_count']), ENT_QUOTES, 'UTF-8'); ?></li>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <li>ไม่พบข้อมูล Supplier ในปีที่เลือก</li>
+                        <?php endif; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลเป็นตาราง</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Supplier</th>
+                                        <th>PO</th>
+                                        <th>PR</th>
+                                        <th>รายการ</th>
+                                        <th>จำนวนเปิดซื้อ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($purchaseSupplierRows)): ?>
+                                        <?php foreach ($purchaseSupplierRows as $row): ?>
+                                            <?php
+                                                $supplierLabel = trim((string) $row['spprcd']) !== ''
+                                                    ? trim((string) $row['spprcd']) . ' - ' . trim((string) $row['spprnme'])
+                                                    : trim((string) $row['spprnme']);
+                                            ?>
+                                            <tr>
+                                                <td><?php echo htmlspecialchars($supplierLabel, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td><?php echo formatNumber((float) $row['po_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['pr_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['line_count']); ?></td>
+                                                <td><?php echo formatQuantity((float) $row['purchased_qty']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="5">ไม่พบข้อมูล Supplier ในปีที่เลือก</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+
+                <article class="panel panel-half">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="purchaseProductChartTitle">Top 10 สินค้าที่สั่งบ่อย</h2>
+                            <p class="panel-desc">จัดอันดับสินค้าจาก `prd.iprod / iim.idesc1` ตามจำนวนรายการ PR detail เพื่อดูสินค้าที่ถูกขอซื้อซ้ำบ่อยที่สุด</p>
+                        </div>
+                        <div class="chip">จัดซื้อ</div>
+                    </div>
+                    <div class="chart-wrap tall">
+                        <canvas id="purchaseProductChart" role="img" aria-labelledby="purchaseProductChartTitle" aria-describedby="purchaseProductChartDesc purchaseProductChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="purchaseProductChartDesc">กราฟแสดง Top 10 สินค้าที่ถูกสั่งบ่อยที่สุดตามจำนวนรายการ PR detail</p>
+                    <ul class="sr-only" id="purchaseProductChartData">
+                        <?php if (!empty($purchaseProductRows)): ?>
+                            <?php foreach ($purchaseProductRows as $row): ?>
+                                <?php
+                                    $productLabel = trim((string) $row['iprod']) !== ''
+                                        ? trim((string) $row['iprod']) . ' - ' . trim((string) $row['idesc1'])
+                                        : trim((string) $row['idesc1']);
+                                ?>
+                                <li><?php echo htmlspecialchars($productLabel . ' ' . formatNumber((float) $row['line_count']) . ' รายการ PR ' . formatNumber((float) $row['pr_count']) . ' เอกสาร จำนวนที่ขอ ' . formatQuantity((float) $row['requested_qty']), ENT_QUOTES, 'UTF-8'); ?></li>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <li>ไม่พบข้อมูลสินค้าที่สั่งในปีที่เลือก</li>
+                        <?php endif; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลเป็นตาราง</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>สินค้า</th>
+                                        <th>รายการ</th>
+                                        <th>PR</th>
+                                        <th>เปิด PO แล้ว</th>
+                                        <th>จำนวน PR</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($purchaseProductRows)): ?>
+                                        <?php foreach ($purchaseProductRows as $row): ?>
+                                            <?php
+                                                $productLabel = trim((string) $row['iprod']) !== ''
+                                                    ? trim((string) $row['iprod']) . ' - ' . trim((string) $row['idesc1'])
+                                                    : trim((string) $row['idesc1']);
+                                            ?>
+                                            <tr>
+                                                <td><?php echo htmlspecialchars($productLabel, ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td><?php echo formatNumber((float) $row['line_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['pr_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['po_line_count']); ?></td>
+                                                <td><?php echo formatQuantity((float) $row['requested_qty']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="5">ไม่พบข้อมูลสินค้าที่สั่งในปีที่เลือก</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+                </div>
+
+                <div class="chart-section" id="chartSectionProduction" role="tabpanel" aria-labelledby="chartSectionProductionTab" data-chart-section="production">
+                <form id="productionDailyFilterForm" method="get" aria-label="ตัวกรองการผลิตรายวัน">
+                    <input type="hidden" name="year" value="<?php echo (int) $selectedYear; ?>">
+                    <input type="hidden" name="chart_section" value="production">
+                    <input type="hidden" name="month" value="<?php echo $selectedMonth >= 1 ? (int) $selectedMonth : ''; ?>">
+                    <input type="hidden" name="budgetcd" value="<?php echo htmlspecialchars($selectedBudgetCode, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="budgetdesc" value="<?php echo htmlspecialchars($selectedBudgetDesc, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="load_start" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="load_end" value="<?php echo htmlspecialchars($hasCustomLoadDates ? $loadingEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="purchase_start" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="purchase_end" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
                     
                     <div class="filter-field">
                         <label for="prodStart">วันที่เริ่มต้น</label>
-                        <input type="date" name="prod_start" id="prodStart" min="<?php echo (int) $selectedYear; ?>-01-01" max="<?php echo (int) $selectedYear; ?>-12-31" value="<?php echo htmlspecialchars($productionDailyStartDate, ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="text" name="prod_start" id="prodStart" autocomplete="off" placeholder="dd/MM/yyyy" data-date-picker="thai" readonly aria-haspopup="dialog" value="<?php echo htmlspecialchars(formatFilterDateInput($productionDailyStartDate), ENT_QUOTES, 'UTF-8'); ?>">
                     </div>
                     <div class="filter-field">
                         <label for="prodEnd">วันที่สิ้นสุด</label>
-                        <input type="date" name="prod_end" id="prodEnd" min="<?php echo (int) $selectedYear; ?>-01-01" max="<?php echo (int) $selectedYear; ?>-12-31" value="<?php echo htmlspecialchars($productionDailyEndDate, ENT_QUOTES, 'UTF-8'); ?>">
+                        <input type="text" name="prod_end" id="prodEnd" autocomplete="off" placeholder="dd/MM/yyyy" data-date-picker="thai" readonly aria-haspopup="dialog" value="<?php echo htmlspecialchars(formatFilterDateInput($productionDailyEndDate), ENT_QUOTES, 'UTF-8'); ?>">
                     </div>
                     <div class="filter-actions">
                         <button type="submit">กรองข้อมูล</button>
@@ -1288,6 +2135,190 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
                                     <?php else: ?>
                                         <tr>
                                             <td colspan="4">ไม่พบข้อมูลการผลิตรายวันแยกตามสินค้าย้อนหลัง <?php echo (int) $productionDailyNumDays; ?> วัน</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+                </div>
+
+                <div class="chart-section" id="chartSectionWarehouse" role="tabpanel" aria-labelledby="chartSectionWarehouseTab" data-chart-section="warehouse">
+                <form id="loadingDateFilterForm" method="get" aria-label="ตัวกรองวันที่คลังสินค้า">
+                    <input type="hidden" name="year" value="<?php echo (int) $selectedYear; ?>">
+                    <input type="hidden" name="chart_section" value="warehouse">
+                    <input type="hidden" name="month" value="<?php echo $selectedMonth >= 1 ? (int) $selectedMonth : ''; ?>">
+                    <input type="hidden" name="budgetcd" value="<?php echo htmlspecialchars($selectedBudgetCode, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="budgetdesc" value="<?php echo htmlspecialchars($selectedBudgetDesc, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="prod_start" value="<?php echo htmlspecialchars($selectedProdStart, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="prod_end" value="<?php echo htmlspecialchars($selectedProdEnd, ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="purchase_start" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseStartDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="purchase_end" value="<?php echo htmlspecialchars($hasCustomPurchaseDates ? $purchaseEndDate : '', ENT_QUOTES, 'UTF-8'); ?>">
+
+                    <div class="filter-field">
+                        <label for="loadStart">วันที่เริ่มต้น</label>
+                        <input type="text" name="load_start" id="loadStart" autocomplete="off" placeholder="dd/MM/yyyy" data-date-picker="thai" readonly aria-haspopup="dialog" value="<?php echo htmlspecialchars(formatFilterDateInput($loadingStartDate), ENT_QUOTES, 'UTF-8'); ?>">
+                    </div>
+                    <div class="filter-field">
+                        <label for="loadEnd">วันที่สิ้นสุด</label>
+                        <input type="text" name="load_end" id="loadEnd" autocomplete="off" placeholder="dd/MM/yyyy" data-date-picker="thai" readonly aria-haspopup="dialog" value="<?php echo htmlspecialchars(formatFilterDateInput($loadingEndDate), ENT_QUOTES, 'UTF-8'); ?>">
+                    </div>
+                    <div class="filter-actions">
+                        <button type="submit">กรองข้อมูล</button>
+                        <?php
+                        $clearLoadDatesQuery = $filterQuery;
+                        unset($clearLoadDatesQuery['load_start']);
+                        unset($clearLoadDatesQuery['load_end']);
+                        $clearLoadDatesQuery['chart_section'] = 'warehouse';
+                        $clearLoadDatesUrl = '?' . http_build_query($clearLoadDatesQuery);
+                        ?>
+                        <a class="secondary-action secondary-action-quiet" href="<?php echo htmlspecialchars($clearLoadDatesUrl, ENT_QUOTES, 'UTF-8'); ?>">กลับค่าเริ่มต้น</a>
+                    </div>
+                </form>
+
+                <article class="panel panel-full">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="warehouseReceiptMonthlyChartTitle">น้ำหนักรับเข้าคลังรายเดือน</h2>
+                            <p class="panel-desc">คำนวณน้ำหนักรับเข้าคลังจาก `rcv_qty` โดยถ้า `unit.uncd = KG` ใช้ค่าเดิม และถ้าไม่ใช่ให้นำไปคูณ `iioq` เพื่อแปลงเป็นกิโลกรัม</p>
+                        </div>
+                        <div class="chip">คลังสินค้า</div>
+                    </div>
+                    <div class="chart-wrap tall">
+                        <canvas id="warehouseReceiptMonthlyChart" role="img" aria-labelledby="warehouseReceiptMonthlyChartTitle" aria-describedby="warehouseReceiptMonthlyChartDesc warehouseReceiptMonthlyChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="warehouseReceiptMonthlyChartDesc">กราฟแสดงน้ำหนักรับเข้าคลังและจำนวนเอกสารรับเข้าคลังสินค้าในแต่ละเดือนของปีที่เลือก</p>
+                    <ul class="sr-only" id="warehouseReceiptMonthlyChartData">
+                        <?php for ($monthIndex = 0; $monthIndex < count($monthLabels); $monthIndex++): ?>
+                            <li><?php echo htmlspecialchars($monthLabels[$monthIndex] . ' น้ำหนักรับเข้า ' . formatQuantity($warehouseReceiptWeightSeries[$monthIndex]) . ' กก. และเอกสาร ' . formatNumber($warehouseReceiptDocSeries[$monthIndex]) . ' ใบ', ENT_QUOTES, 'UTF-8'); ?></li>
+                        <?php endfor; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลรายเดือน</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>เดือน</th>
+                                        <th>น้ำหนักรับเข้า (กก.)</th>
+                                        <th>เอกสาร</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php for ($monthIndex = 0; $monthIndex < count($monthLabels); $monthIndex++): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($monthLabels[$monthIndex], ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td><?php echo formatQuantity($warehouseReceiptWeightSeries[$monthIndex]); ?></td>
+                                            <td><?php echo formatNumber($warehouseReceiptDocSeries[$monthIndex]); ?></td>
+                                        </tr>
+                                    <?php endfor; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+
+                <article class="panel panel-half">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="warehouseReceiptCustomerChartTitle">Top 10 ลูกค้าที่ฝากตามน้ำหนัก</h2>
+                            <p class="panel-desc">จัดอันดับลูกค้าตามน้ำหนักรับเข้าคลังรวมในช่วงวันที่ที่เลือก</p>
+                        </div>
+                        <div class="chip">คลังสินค้า</div>
+                    </div>
+                    <div class="chart-wrap tall">
+                        <canvas id="warehouseReceiptCustomerChart" role="img" aria-labelledby="warehouseReceiptCustomerChartTitle" aria-describedby="warehouseReceiptCustomerChartDesc warehouseReceiptCustomerChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="warehouseReceiptCustomerChartDesc">กราฟแสดงลูกค้า Top 10 ที่ฝากสินค้าสูงสุด เรียงตามน้ำหนักรับเข้าคลังรวม</p>
+                    <ul class="sr-only" id="warehouseReceiptCustomerChartData">
+                        <?php if (!empty($warehouseReceiptCustomerChart['rows'])): ?>
+                            <?php foreach ($warehouseReceiptCustomerChart['rows'] as $row): ?>
+                                <li><?php echo htmlspecialchars((string) $row['custnme'] . ' น้ำหนักรับเข้า ' . formatQuantity((float) $row['total_weight']) . ' กก. เอกสาร ' . formatNumber((float) $row['doc_count']) . ' ใบ', ENT_QUOTES, 'UTF-8'); ?></li>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <li>ไม่พบข้อมูลลูกค้าที่ฝากในช่วงวันที่ที่เลือก</li>
+                        <?php endif; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลเป็นตาราง</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ลูกค้า</th>
+                                        <th>น้ำหนักรับเข้า (กก.)</th>
+                                        <th>เอกสาร</th>
+                                        <th>รายการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($warehouseReceiptCustomerChart['rows'])): ?>
+                                        <?php foreach ($warehouseReceiptCustomerChart['rows'] as $row): ?>
+                                            <tr>
+                                                <td><?php echo htmlspecialchars((string) $row['custnme'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td><?php echo formatQuantity((float) $row['total_weight']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['doc_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['line_count']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="4">ไม่พบข้อมูลลูกค้าที่ฝากในช่วงวันที่ที่เลือก</td>
+                                        </tr>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </article>
+
+                <article class="panel panel-half">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title" id="warehouseReceiptProductChartTitle">Top 10 สินค้าที่ฝากตามน้ำหนัก</h2>
+                            <p class="panel-desc">จัดอันดับสินค้าตามน้ำหนักรับเข้าคลังรวมในช่วงวันที่ที่เลือก</p>
+                        </div>
+                        <div class="chip">คลังสินค้า</div>
+                    </div>
+                    <div class="chart-wrap tall">
+                        <canvas id="warehouseReceiptProductChart" role="img" aria-labelledby="warehouseReceiptProductChartTitle" aria-describedby="warehouseReceiptProductChartDesc warehouseReceiptProductChartData"></canvas>
+                    </div>
+                    <p class="sr-only" id="warehouseReceiptProductChartDesc">กราฟแสดงสินค้า Top 10 ที่ฝากสูงสุด เรียงตามน้ำหนักรับเข้าคลังรวม</p>
+                    <ul class="sr-only" id="warehouseReceiptProductChartData">
+                        <?php if (!empty($warehouseReceiptProductChart['rows'])): ?>
+                            <?php foreach ($warehouseReceiptProductChart['rows'] as $row): ?>
+                                <li><?php echo htmlspecialchars((string) $row['idesc1'] . ' น้ำหนักรับเข้า ' . formatQuantity((float) $row['total_weight']) . ' กก. เอกสาร ' . formatNumber((float) $row['doc_count']) . ' ใบ', ENT_QUOTES, 'UTF-8'); ?></li>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <li>ไม่พบข้อมูลสินค้าที่ฝากในช่วงวันที่ที่เลือก</li>
+                        <?php endif; ?>
+                    </ul>
+                    <details class="data-details">
+                        <summary>ดูข้อมูลเป็นตาราง</summary>
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>สินค้า</th>
+                                        <th>น้ำหนักรับเข้า (กก.)</th>
+                                        <th>เอกสาร</th>
+                                        <th>รายการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (!empty($warehouseReceiptProductChart['rows'])): ?>
+                                        <?php foreach ($warehouseReceiptProductChart['rows'] as $row): ?>
+                                            <tr>
+                                                <td><?php echo htmlspecialchars((string) $row['idesc1'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                                <td><?php echo formatQuantity((float) $row['total_weight']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['doc_count']); ?></td>
+                                                <td><?php echo formatNumber((float) $row['line_count']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr>
+                                            <td colspan="4">ไม่พบข้อมูลสินค้าที่ฝากในช่วงวันที่ที่เลือก</td>
                                         </tr>
                                     <?php endif; ?>
                                 </tbody>
@@ -1586,10 +2617,11 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
                         </div>
                     </details>
                 </article>
+                </div>
             </section>
         <?php endif; ?>
 
-        <div class="footer-note">ข้อมูลดึงจากฐาน M_FOOD ตามปีที่เลือก และอัปเดตเมื่อผู้ใช้เปลี่ยนปีหรือกดอัปเดตข้อมูล</div>
+        <div class="footer-note">ข้อมูลดึงจากฐาน M_FOOD ตามปีที่เลือก และรีเฟรชอัตโนมัติทุก 10 นาที หรือเมื่อผู้ใช้เปลี่ยนปีและกดอัปเดตข้อมูล</div>
     </main>
 
     <script id="dashboard-data" type="application/json"><?php
@@ -1603,6 +2635,6 @@ $clearFiltersUrl = '?' . http_build_query($clearFiltersQuery);
             | JSON_HEX_QUOT
         );
     ?></script>
-    <script src="assets/js/dashboard.js"></script>
+    <script src="assets/js/dashboard.js?v=20260616-loading-overlay"></script>
 </body>
 </html>

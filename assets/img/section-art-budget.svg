@@ -1,0 +1,48 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="budgetA" x1="274" y1="92" x2="1226" y2="740" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C93FF" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#30C4E8" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="budgetB" x1="690" y1="238" x2="1142" y2="684" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5B57F7" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#1AAFC7" stop-opacity="0.16"/>
+    </linearGradient>
+    <radialGradient id="budgetGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1130 220) rotate(137.31) scale(550.445 440.207)">
+      <stop stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" rx="48" fill="url(#budgetGlow)"/>
+  <g opacity="0.58">
+    <path d="M854 110C1048 42 1282 118 1410 280" stroke="url(#budgetA)" stroke-width="30" stroke-linecap="round"/>
+    <path d="M910 184C1062 130 1234 180 1326 306" stroke="#B5C7FF" stroke-opacity="0.34" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="1142" cy="254" r="214" stroke="url(#budgetA)" stroke-width="28"/>
+    <circle cx="1142" cy="254" r="144" stroke="#D7E4FF" stroke-opacity="0.34" stroke-width="10"/>
+    <circle cx="1142" cy="254" r="10" fill="#5E6AF2"/>
+  </g>
+  <g opacity="0.52">
+    <path d="M720 536H1350" stroke="#C8D8F4" stroke-opacity="0.42" stroke-width="2"/>
+    <path d="M752 600H1380" stroke="#C8D8F4" stroke-opacity="0.26" stroke-width="2"/>
+    <path d="M786 664H1414" stroke="#C8D8F4" stroke-opacity="0.2" stroke-width="2"/>
+    <path d="M820 728H1448" stroke="#C8D8F4" stroke-opacity="0.14" stroke-width="2"/>
+  </g>
+  <g opacity="0.82">
+    <rect x="802" y="492" width="64" height="238" rx="26" fill="url(#budgetB)"/>
+    <rect x="896" y="420" width="64" height="310" rx="26" fill="url(#budgetB)"/>
+    <rect x="990" y="366" width="64" height="364" rx="26" fill="url(#budgetB)"/>
+    <rect x="1084" y="448" width="64" height="282" rx="26" fill="url(#budgetB)"/>
+    <rect x="1178" y="322" width="64" height="408" rx="26" fill="url(#budgetB)"/>
+    <rect x="1272" y="268" width="64" height="462" rx="26" fill="url(#budgetB)"/>
+  </g>
+  <g opacity="0.9">
+    <path d="M760 648L860 560L936 578L1038 434L1110 462L1242 282L1342 330" stroke="#4B59E2" stroke-opacity="0.88" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="760" cy="648" r="12" fill="#4B59E2"/>
+    <circle cx="860" cy="560" r="12" fill="#4B59E2"/>
+    <circle cx="936" cy="578" r="12" fill="#4B59E2"/>
+    <circle cx="1038" cy="434" r="12" fill="#4B59E2"/>
+    <circle cx="1110" cy="462" r="12" fill="#4B59E2"/>
+    <circle cx="1242" cy="282" r="12" fill="#4B59E2"/>
+    <circle cx="1342" cy="330" r="12" fill="#4B59E2"/>
+  </g>
+</svg>

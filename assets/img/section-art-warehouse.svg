@@ -1,0 +1,43 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="warehouseA" x1="818" y1="164" x2="1394" y2="724" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4E88FF" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#23C2C1" stop-opacity="0.12"/>
+    </linearGradient>
+    <linearGradient id="warehouseB" x1="908" y1="278" x2="1330" y2="694" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4F46E5" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#0EA5E9" stop-opacity="0.18"/>
+    </linearGradient>
+    <radialGradient id="warehouseGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1116 224) rotate(130.536) scale(548.064 446.564)">
+      <stop stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#warehouseGlow)"/>
+  <g opacity="0.58">
+    <path d="M820 642H1448" stroke="#D9EAF7" stroke-opacity="0.52" stroke-width="10" stroke-linecap="round"/>
+    <path d="M842 572H1426" stroke="#D9EAF7" stroke-opacity="0.34" stroke-width="8" stroke-linecap="round"/>
+    <path d="M864 502H1404" stroke="#D9EAF7" stroke-opacity="0.22" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <g opacity="0.92">
+    <path d="M960 242L1104 178L1248 242L1104 306L960 242Z" fill="#EFF6FF" fill-opacity="0.78" stroke="#CFE0F6" stroke-width="4"/>
+    <path d="M960 242V436L1104 502V306L960 242Z" fill="url(#warehouseB)"/>
+    <path d="M1248 242V436L1104 502V306L1248 242Z" fill="url(#warehouseA)"/>
+    <path d="M1122 386L1266 322L1410 386L1266 450L1122 386Z" fill="#F2FBFF" fill-opacity="0.72" stroke="#D4E9F5" stroke-width="4"/>
+    <path d="M1122 386V548L1266 612V450L1122 386Z" fill="url(#warehouseB)"/>
+    <path d="M1410 386V548L1266 612V450L1410 386Z" fill="url(#warehouseA)"/>
+    <path d="M796 386L940 322L1084 386L940 450L796 386Z" fill="#F2FBFF" fill-opacity="0.72" stroke="#D4E9F5" stroke-width="4"/>
+    <path d="M796 386V548L940 612V450L796 386Z" fill="url(#warehouseA)"/>
+    <path d="M1084 386V548L940 612V450L1084 386Z" fill="url(#warehouseB)"/>
+  </g>
+  <g opacity="0.72">
+    <rect x="884" y="688" width="456" height="28" rx="14" fill="#EAF5FF" fill-opacity="0.74"/>
+    <rect x="916" y="646" width="392" height="20" rx="10" fill="#D8ECF8" fill-opacity="0.74"/>
+  </g>
+  <g opacity="0.82">
+    <path d="M1110 130V238" stroke="#4F46E5" stroke-width="10" stroke-linecap="round"/>
+    <path d="M1070 166L1110 126L1150 166" stroke="#4F46E5" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M1266 702V594" stroke="#0EA5E9" stroke-width="10" stroke-linecap="round"/>
+    <path d="M1226 664L1266 704L1306 664" stroke="#0EA5E9" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
